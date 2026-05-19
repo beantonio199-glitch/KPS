@@ -33,6 +33,12 @@ type LeaderboardRow = {
   losses: number;
 };
 
+type RoundOutcome =
+  | { kind: "no_choices"; losers: string[] }
+  | { kind: "same_choice"; losers: string[] }
+  | { kind: "all_symbols"; losers: string[] }
+  | { kind: "elimination"; losers: string[]; winningChoice: Choice };
+
 const CHOICES: Record<Choice, string> = {
   rock: "Kivi",
   paper: "Paperi",
@@ -179,50 +185,81 @@ function choiceButtons(): ActionRowBuilder<ButtonBuilder> {
   );
 }
 
-function evaluateRound(game: GameState): string[] {
+function evaluateRound(game: GameState): RoundOutcome {
   const values = Object.values(game.choices);
   const hasRock = values.includes("rock");
   const hasPaper = values.includes("paper");
   const hasScissors = values.includes("scissors");
 
-  if (
-    values.length === 0 ||
-    (hasRock && hasPaper && hasScissors) ||
-    values.every(choice => choice === values[0])
-  ) {
-    return [];
+  if (values.length === 0) {
+    return { kind: "no_choices", losers: [] };
+  }
+
+  if (values.every(choice => choice === values[0])) {
+    return { kind: "same_choice", losers: [] };
+  }
+
+  if (hasRock && hasPaper && hasScissors) {
+    return { kind: "all_symbols", losers: [] };
   }
 
   if (hasRock && hasScissors) {
-    return Object.entries(game.choices)
-      .filter(([, choice]) => choice === "scissors")
-      .map(([id]) => id);
+    return {
+      kind: "elimination",
+      winningChoice: "rock",
+      losers: Object.entries(game.choices)
+        .filter(([, choice]) => choice === "scissors")
+        .map(([id]) => id),
+    };
   }
 
   if (hasPaper && hasRock) {
-    return Object.entries(game.choices)
-      .filter(([, choice]) => choice === "rock")
-      .map(([id]) => id);
+    return {
+      kind: "elimination",
+      winningChoice: "paper",
+      losers: Object.entries(game.choices)
+        .filter(([, choice]) => choice === "rock")
+        .map(([id]) => id),
+    };
   }
 
   if (hasScissors && hasPaper) {
-    return Object.entries(game.choices)
-      .filter(([, choice]) => choice === "paper")
-      .map(([id]) => id);
+    return {
+      kind: "elimination",
+      winningChoice: "scissors",
+      losers: Object.entries(game.choices)
+        .filter(([, choice]) => choice === "paper")
+        .map(([id]) => id),
+    };
   }
 
-  return [];
+  return { kind: "same_choice", losers: [] };
 }
 
-function buildRoundSummary(game: GameState, losers: string[]): string {
+function buildOutcomeLine(outcome: RoundOutcome): string {
+  switch (outcome.kind) {
+    case "no_choices":
+      return "Kierrosta ei voitu ratkaista.";
+    case "same_choice":
+      return "Tasapeli: kaikki valitsivat saman merkin.";
+    case "all_symbols":
+      return "Tasapeli: kierroksella nakyi kaikki kolme merkkia.";
+    case "elimination":
+      return `Kierroksen voittava merkki: ${CHOICES[outcome.winningChoice]}.`;
+  }
+}
+
+function buildRoundSummary(game: GameState, outcome: RoundOutcome): string {
   const lines = Object.entries(game.choices).map(
     ([id, choice]) => `<@${id}> -> ${CHOICES[choice]}`,
   );
 
-  if (losers.length === 0) {
-    lines.push("", "Kaikki selvisivat kierroksesta.");
+  lines.push("", buildOutcomeLine(outcome));
+
+  if (outcome.losers.length === 0) {
+    lines.push("Kaikki selvisivat kierroksesta.");
   } else {
-    lines.push("", `Pudonneet: ${losers.map(id => `<@${id}>`).join(", ")}`);
+    lines.push(`Pudonneet: ${outcome.losers.map(id => `<@${id}>`).join(", ")}`);
   }
 
   lines.push(
@@ -425,8 +462,8 @@ async function handleChoiceButton(interaction: ButtonInteraction): Promise<void>
     return;
   }
 
-  const losers = evaluateRound(game);
-  losers.forEach(id => {
+  const outcome = evaluateRound(game);
+  outcome.losers.forEach(id => {
     game.players.delete(id);
     addLoss(id);
   });
@@ -435,7 +472,7 @@ async function handleChoiceButton(interaction: ButtonInteraction): Promise<void>
     embeds: [
       new EmbedBuilder()
         .setTitle("Kierroksen tulokset")
-        .setDescription(buildRoundSummary(game, losers)),
+        .setDescription(buildRoundSummary(game, outcome)),
     ],
   });
 
