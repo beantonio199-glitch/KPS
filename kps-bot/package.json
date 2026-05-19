@@ -1,7 +1,7 @@
 {
   "name": "kps-bot",
   "version": "1.0.0",
-  "description": "Discord bot project scaffold",
+  "description": "Discord rock-paper-scissors battle royale bot",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -11,6 +11,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "better-sqlite3": "^11.10.0",
     "discord.js": "^14.19.3",

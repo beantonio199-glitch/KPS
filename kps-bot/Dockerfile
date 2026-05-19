@@ -7,7 +7,6 @@ RUN npm ci
 
 COPY tsconfig.json ./
 COPY src ./src
-COPY leaderboard.db ./leaderboard.db
 
 RUN npm run build
 
@@ -19,6 +18,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/leaderboard.db ./leaderboard.db
+
+ENV NODE_ENV=production
 
 CMD ["npm", "start"]

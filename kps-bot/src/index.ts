@@ -1,4 +1,7 @@
 import "dotenv/config";
+import { createServer, Server } from "node:http";
+import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import Database from "better-sqlite3";
 import {
   ActionRowBuilder,
@@ -15,6 +18,38 @@ import {
   SlashCommandBuilder,
 } from "discord.js";
 
+type Choice = "rock" | "paper" | "scissors";
+
+type GameState = {
+  hostId: string;
+  players: Set<string>;
+  choices: Record<string, Choice>;
+  status: "lobby" | "playing";
+};
+
+type LeaderboardRow = {
+  user_id: string;
+  wins: number;
+  losses: number;
+};
+
+const CHOICES: Record<Choice, string> = {
+  rock: "Kivi",
+  paper: "Paperi",
+  scissors: "Sakset",
+};
+
+const commands = [
+  new SlashCommandBuilder()
+    .setName("battle")
+    .setDescription("Aloita kivi-paperi-sakset battle royale.")
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName("leaderboard")
+    .setDescription("Nayta voittotilasto.")
+    .toJSON(),
+];
+
 function getRequiredEnv(name: "TOKEN" | "CLIENT_ID"): string {
   const value = process.env[name];
   if (!value) {
@@ -24,10 +59,28 @@ function getRequiredEnv(name: "TOKEN" | "CLIENT_ID"): string {
   return value;
 }
 
+function getDatabasePath(): string {
+  const configuredPath = process.env.DATABASE_PATH?.trim();
+  if (configuredPath) {
+    return resolve(configuredPath);
+  }
+
+  const railwayVolume = process.env.RAILWAY_VOLUME_MOUNT_PATH?.trim();
+  if (railwayVolume) {
+    return resolve(railwayVolume, "leaderboard.db");
+  }
+
+  return resolve("data", "leaderboard.db");
+}
+
 const TOKEN = getRequiredEnv("TOKEN");
 const CLIENT_ID = getRequiredEnv("CLIENT_ID");
+const PORT = Number(process.env.PORT ?? "3000");
+const DATABASE_PATH = getDatabasePath();
 
-const db = new Database("leaderboard.db");
+mkdirSync(dirname(DATABASE_PATH), { recursive: true });
+
+const db = new Database(DATABASE_PATH);
 db.pragma("journal_mode = WAL");
 db.exec(`
   CREATE TABLE IF NOT EXISTS leaderboard (
@@ -59,37 +112,13 @@ const topPlayersStmt = db.prepare(`
   LIMIT 10
 `);
 
-type Choice = "rock" | "paper" | "scissors";
-
-type GameState = {
-  hostId: string;
-  players: Set<string>;
-  choices: Record<string, Choice>;
-  status: "lobby" | "playing";
-};
-
-const CHOICES: Record<Choice, string> = {
-  rock: "Kivi",
-  paper: "Paperi",
-  scissors: "Sakset",
-};
-
 const games = new Map<string, GameState>();
-
-const commands = [
-  new SlashCommandBuilder()
-    .setName("battle")
-    .setDescription("Aloita kivi-paperi-sakset battle royale.")
-    .toJSON(),
-  new SlashCommandBuilder()
-    .setName("leaderboard")
-    .setDescription("Nayta voittotilasto.")
-    .toJSON(),
-];
-
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
+
+let isDiscordReady = false;
+let healthServer: Server | null = null;
 
 function ensurePlayer(userId: string): void {
   ensurePlayerStmt.run(userId);
@@ -209,6 +238,36 @@ async function registerCommands(): Promise<void> {
   await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
 }
 
+function startHealthServer(): Server {
+  const server = createServer((request, response) => {
+    const path = request.url ?? "/";
+    const isHealthy = isDiscordReady;
+
+    if (path === "/health") {
+      response.writeHead(isHealthy ? 200 : 503, {
+        "Content-Type": "application/json",
+      });
+      response.end(
+        JSON.stringify({
+          status: isHealthy ? "ok" : "starting",
+          discordReady: isDiscordReady,
+          databasePath: DATABASE_PATH,
+        }),
+      );
+      return;
+    }
+
+    response.writeHead(200, { "Content-Type": "text/plain" });
+    response.end("kps-bot is running\n");
+  });
+
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`Health server listening on ${PORT}`);
+  });
+
+  return server;
+}
+
 async function handleBattleCommand(
   interaction: ChatInputCommandInteraction,
 ): Promise<void> {
@@ -239,11 +298,7 @@ async function handleBattleCommand(
 async function handleLeaderboardCommand(
   interaction: ChatInputCommandInteraction,
 ): Promise<void> {
-  const rows = topPlayersStmt.all() as Array<{
-    user_id: string;
-    wins: number;
-    losses: number;
-  }>;
+  const rows = topPlayersStmt.all() as LeaderboardRow[];
 
   const description =
     rows.length === 0
@@ -412,9 +467,36 @@ async function handleChoiceButton(interaction: ButtonInteraction): Promise<void>
   });
 }
 
+async function shutdown(signal: string): Promise<void> {
+  console.log(`Received ${signal}, shutting down.`);
+  isDiscordReady = false;
+
+  const closeHealthServer = new Promise<void>((resolveClose, rejectClose) => {
+    if (!healthServer) {
+      resolveClose();
+      return;
+    }
+
+    healthServer.close(error => {
+      if (error) {
+        rejectClose(error);
+        return;
+      }
+
+      resolveClose();
+    });
+  });
+
+  await Promise.allSettled([client.destroy(), closeHealthServer]);
+  db.close();
+  process.exit(0);
+}
+
 client.once("ready", async readyClient => {
   await registerCommands();
+  isDiscordReady = true;
   console.log(`Logged in as ${readyClient.user.tag}`);
+  console.log(`Using database at ${DATABASE_PATH}`);
 });
 
 client.on("interactionCreate", async (interaction: Interaction) => {
@@ -463,6 +545,16 @@ client.on("interactionCreate", async (interaction: Interaction) => {
       });
     }
   }
+});
+
+healthServer = startHealthServer();
+
+process.on("SIGINT", () => {
+  void shutdown("SIGINT");
+});
+
+process.on("SIGTERM", () => {
+  void shutdown("SIGTERM");
 });
 
 void client.login(TOKEN);
