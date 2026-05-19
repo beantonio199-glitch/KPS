@@ -52,7 +52,7 @@ const commands = [
     .toJSON(),
   new SlashCommandBuilder()
     .setName("leaderboard")
-    .setDescription("Nayta voittotilasto.")
+    .setDescription("Näytä voittotilasto.")
     .toJSON(),
 ];
 
@@ -150,7 +150,7 @@ function buildLobbyEmbed(game: GameState): EmbedBuilder {
         "Liity peliin painikkeella.",
         "",
         `Pelaajat (${game.players.size}):`,
-        players || "Ei pelaajia viela.",
+        players || "Ei pelaajia vielä.",
       ].join("\n"),
     );
 }
@@ -243,7 +243,7 @@ function buildOutcomeLine(outcome: RoundOutcome): string {
     case "same_choice":
       return "Tasapeli: kaikki valitsivat saman merkin.";
     case "all_symbols":
-      return "Tasapeli: kierroksella nakyi kaikki kolme merkkia.";
+      return "Tasapeli: kierroksella näkyi kaikki kolme merkkiä.";
     case "elimination":
       return `Kierroksen voittava merkki: ${CHOICES[outcome.winningChoice]}.`;
   }
@@ -257,14 +257,14 @@ function buildRoundSummary(game: GameState, outcome: RoundOutcome): string {
   lines.push("", buildOutcomeLine(outcome));
 
   if (outcome.losers.length === 0) {
-    lines.push("Kaikki selvisivat kierroksesta.");
+    lines.push("Kaikki selvisivät kierroksesta.");
   } else {
     lines.push(`Pudonneet: ${outcome.losers.map(id => `<@${id}>`).join(", ")}`);
   }
 
   lines.push(
     "",
-    `Jaljella: ${[...game.players].map(id => `<@${id}>`).join(", ")}`,
+    `Jäljellä: ${[...game.players].map(id => `<@${id}>`).join(", ")}`,
   );
 
   return lines.join("\n");
@@ -311,7 +311,7 @@ async function handleBattleCommand(
   const existingGame = games.get(interaction.channelId);
   if (existingGame) {
     await interaction.reply({
-      content: "Tassa kanavassa on jo peli kaynnissa.",
+      content: "Tässä kanavassa on jo peli käynnissä.",
       ephemeral: true,
     });
     return;
@@ -339,7 +339,7 @@ async function handleLeaderboardCommand(
 
   const description =
     rows.length === 0
-      ? "Tilasto on viela tyhja."
+      ? "Tilasto on vielä tyhjä."
       : rows
           .map(
             (row, index) =>
@@ -381,7 +381,7 @@ async function handleStartButton(interaction: ButtonInteraction): Promise<void> 
 
   if (!game || game.status !== "lobby") {
     await interaction.reply({
-      content: "Tassa kanavassa ei ole aloitettavaa pelia.",
+      content: "Tässä kanavassa ei ole aloitettavaa peliä.",
       ephemeral: true,
     });
     return;
@@ -389,7 +389,7 @@ async function handleStartButton(interaction: ButtonInteraction): Promise<void> 
 
   if (interaction.user.id !== game.hostId) {
     await interaction.reply({
-      content: "Vain pelin aloittaja voi kaynnistaa kierroksen.",
+      content: "Vain pelin aloittaja voi käynnistää kierroksen.",
       ephemeral: true,
     });
     return;
@@ -397,7 +397,7 @@ async function handleStartButton(interaction: ButtonInteraction): Promise<void> 
 
   if (game.players.size < 2) {
     await interaction.reply({
-      content: "Peli tarvitsee vahintaan kaksi pelaajaa.",
+      content: "Peli tarvitsee vähintään kaksi pelaajaa.",
       ephemeral: true,
     });
     return;
@@ -409,7 +409,7 @@ async function handleStartButton(interaction: ButtonInteraction): Promise<void> 
   await interaction.update({
     embeds: [
       new EmbedBuilder()
-        .setTitle("Kierros kaynnissa")
+        .setTitle("Kierros käynnissä")
         .setDescription(
           "Tee valintasi painamalla nappia. Vastaukset kirjataan salassa.",
         ),
@@ -444,7 +444,7 @@ async function handleChoiceButton(interaction: ButtonInteraction): Promise<void>
 
   if (!game.players.has(interaction.user.id)) {
     await interaction.reply({
-      content: "Et ole mukana tassa pelissa.",
+      content: "Et ole mukana tässä pelissä.",
       ephemeral: true,
     });
     return;
@@ -498,7 +498,7 @@ async function handleChoiceButton(interaction: ButtonInteraction): Promise<void>
     embeds: [
       new EmbedBuilder()
         .setTitle("Seuraava kierros")
-        .setDescription("Jaljella olevat pelaajat tekevat uuden valinnan."),
+        .setDescription("Jäljellä olevat pelaajat tekevät uuden valinnan."),
     ],
     components: [choiceButtons()],
   });
